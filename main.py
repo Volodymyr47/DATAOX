@@ -1,127 +1,107 @@
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime, date
-from redis import Redis
-from rq import Queue
+
+from models import PostHead
 
 
-url_to_parse = "https://www.kijiji.ca/b-apartments-condos/city-of-toronto/c37l1700273"
-que = Queue(connection=Redis())
-# img = que.enqueue(get_images, url_to_parse)
-# page = requests.get(url_to_parse)
-# bs = BeautifulSoup(page.text, 'lxml')
+url_to_parse = 'https://www.kijiji.ca/b-apartments-condos/city-of-toronto/c37l1700273'
+max_page = 999
+
+page = requests.get(url_to_parse)
+bs = BeautifulSoup(page.text, 'lxml')
+all_data = bs.find_all()
+post_head = PostHead()
 
 
-# data = bs.find('div', class_='clearfix').find('div', class_='image')
-# images = bs.find_all('div', class_='image') #1
-# titles = bs.find_all('div', class_='title') #2
-# dates_of_post = bs.find_all('span', class_='date-posted')
-# prices = bs.find_all('div', class_='price') #7
+class PageScrap:
 
-# var
-# img_url  = ''
-# oneprice = ''
-# currency = ''
-post_title = ''
-post_date = ''
+    def get_data(self, source):
+        '''
+        Get whole data from one page
+        '''
+        for data in source:
+            ti = ''
+            im = ''
+            da = ''
+            pr = ''
+            cr = ''
+            lo = ''
+            ds = ''
+            br = ''
 
+            title = data.find('div', class_='title')
+            if not title is None:
+                ti = title.text.lstrip().rstrip()
 
-def get_images(url):
-    images = []
-    page = requests.get(url)
-    bs = BeautifulSoup(page.text, 'lxml')
-    all_images_data = bs.find_all('div', class_='image')
+            image = data.find('div', class_='image')
+            if not image is None:
+                im_ = image.find('img')
+                if not im_ is None:
+                    if im_.has_attr('data-src'):
+                         im = im_['data-src']
 
-    for image in all_images_data:
-        if image.img.has_attr('data-src'):
-            images.append(image.img['data-src'])
-    return images
+            post_date = data.find('span', class_='date-posted')
+            if not post_date is None:
+                if post_date.text.rstrip().lstrip()[2] == post_date.text.rstrip().lstrip()[5] == '/':
+                    new_post_date = datetime.strptime(post_date.text, '%d/%m/%Y').strftime("%d-%m-%Y")
+                    da = new_post_date
+                else:
+                    da = datetime.strptime(str(date.today()),'%Y-%m-%d').strftime('%d-%m-%Y')
 
+            price = data.find('div', class_='price')
+            if not price is None:
+                prc = price.text.lstrip().rstrip()
+                if prc.startswith('$') or prc.startswith('€') or prc.startswith('₴'):
+                    pr = prc.split(prc[0])[1]
+                    cr = prc[0]
+                else:
+                    pr = prc
+                    cr = '-'
 
-# for i in get_images(url_to_parse):
-#     print(i)
+            location = data.find('div', class_='location')
+            if not location is None:
+                lo = location.span.text.lstrip().rstrip()
 
+            description = data.find('div', class_='description')
+            if not description is None:
+                ds = description.text.lstrip().rstrip()
 
-# #2
-def get_titles(url):
-    titles = []
-    page = requests.get(url)
-    bs = BeautifulSoup(page.text, 'lxml')
-    all_titles_data = bs.find_all('div', class_='title')
+            bedroom = data.find('span', class_='bedrooms')
+            if not bedroom is None:
+                bedroom_ = bedroom.text.split(':')
+                br = bedroom_[1].lstrip().rstrip()
 
-    for title in all_titles_data:
-        if title.text.lstrip().rstrip():
-            titles.append(title.text.lstrip().rstrip())
-    return titles
+            # add whole data to DB
+            post_head.add_data(ti, im, da, pr, cr, lo, ds, br)
+        return 'Operation completed'
 
-# for i in get_titles(url_to_parse):
-#     print(i)
-
-
-#3
-def get_post_date(url):
-    post_dates = []
-    page = requests.get(url)
-    bs = BeautifulSoup(page.text, 'lxml')
-    all_dates_data = bs.find_all('span', class_='date-posted')
-
-    for pd in all_dates_data:
-        if pd.text.rstrip().lstrip()[2] == pd.text.rstrip().lstrip()[5] == '/':
-            post_date = datetime.strptime(pd.text, '%d/%m/%Y').strftime("%d-%m-%Y")
-            post_dates.append(post_date)
+    def is_last_page(self, url):
+        '''
+        Сheck whether this page is the last one
+        '''
+        p = requests.get(url)
+        b = BeautifulSoup(p.text, 'lxml')
+        test_data = b.find_all('div', class_='image')
+        if len(test_data) == 0:
+            return True
         else:
-            post_dates.append(datetime.strptime(str(date.today()),'%Y-%m-%d').strftime('%d-%m-%Y'))
-    return post_dates
+            return False
 
-# for i in get_post_date(url_to_parse):
-#     print(i)
+# new scraping instance
+scraping = PageScrap()
 
-# # 7
-def get_prices(url):
-    prices = []
-    page = requests.get(url)
-    bs = BeautifulSoup(page.text, 'lxml')
-    all_prices_data = bs.find_all('div', class_='price')
-    for price in all_prices_data:
-        if price.text:
-            prc = price.text.lstrip().rstrip()
-            #prices.append(prc)
-            if prc.startswith('$') or prc.startswith('€') or prc.startswith('₴'):
-                prices.append(prc)
-                #prices.append(prc.split(prc[0])[1])
-            else:
-                prices.append('-'+prc)
-    return prices
+# scraping first page only
+print(scraping.get_data(all_data))
 
-# for i in get_prices(url_to_parse):
-#     print(i[0], ' ', i.split(i[0])[1])
-
-
-def get_cityes(url):
-    cityes = []
-    page = requests.get(url_to_parse)
-    bs = BeautifulSoup(page.text, 'lxml')
-    all_cities_data = bs.find_all('div', class_='location')
-
-    for city in all_cities_data:
-        if city:
-            cityes.append(city.span.text.lstrip().rstrip())
-    return cityes
-
-# for i in get_cityes(url_to_parse):
-#     print(i)
-
-def get_beds(url):
-    beds = []
-    page = requests.get(url_to_parse)
-    bs = BeautifulSoup(page.text, 'lxml')
-    all_beds_data = bs.find_all('span', class_='bedrooms')
-
-    for bed in all_beds_data:
-        if bed:
-            onebed = bed.text.split(':')
-
-            beds.append(onebed[1].lstrip().rstrip())
-    return beds
-
-
+# scraping pages from second to last
+for i in range(2, max_page):
+    next_url_to_parse = f'https://www.kijiji.ca/b-apartments-condos/city-of-toronto/page-{i}/c37l1700273'
+    print(next_url_to_parse)
+    if not scraping.is_last_page(next_url_to_parse):
+        page_next = requests.get(next_url_to_parse)
+        bs_next = BeautifulSoup(page_next.text, 'lxml')
+        all_data_next = bs_next.find_all()
+        print(scraping.get_data(all_data_next))
+    else:
+        print('All pages have been scraping')
