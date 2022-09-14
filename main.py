@@ -105,3 +105,4 @@ for i in range(2, max_page):
         print(scraping.get_data(all_data_next))
     else:
         print('All pages have been scraping')
+        break
